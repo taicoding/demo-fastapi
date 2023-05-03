@@ -1,12 +1,29 @@
-from fastapi import Body, FastAPI, Path, Query
+from fastapi import Body, FastAPI, HTTPException, Path, Query, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from starlette.requests import Request
+from jwt_manager import create_token, validate_token
+from fastapi.security import HTTPBearer
 
 app = FastAPI()
 app.title = "Mi primera App con FastAPI"
 app.version = "0.0.1"
+
+
+class JWTBearer(HTTPBearer):
+    async def __call__(self, request: Request):
+        auth = await super().__call__(request)
+        data = validate_token(auth.credentials)
+        if data['email'] != "admin@gmail.com":
+            raise HTTPException(
+                status_code=403, detail="Credenciales invalidas")
+
+
+class User(BaseModel):
+    email: str
+    password: str
 
 
 class Movie(BaseModel):
@@ -55,12 +72,19 @@ def message():
     return HTMLResponse("<h1> Hola esto es un endpoint</h1>")
 
 
-@app.get("/movies", tags=["movies"], response_model=List[Movie], status_code=200)
+@app.post("/login", tags=["auth"], response_model=dict, status_code=200)
+def login(user: User) -> dict:
+    if user.email == "admin@gmail.com" and user.password == "admin":
+        token = create_token(user.dict())
+        return JSONResponse(content={"token": token}, status_code=200)
+
+
+@app.get("/movies", tags=["movies"], response_model=List[Movie], status_code=200, dependencies=[Depends(JWTBearer())])
 def get_movies() -> List[Movie]:
-    return JSONResponse(content=movies, satatus_code=200)
+    return JSONResponse(content=movies, status_code=200)
 
 
-@app.get(
+@ app.get(
     "/movies/{id}",
     tags=["movies"],
     response_model=Movie,
@@ -72,7 +96,7 @@ def get_movie(id: int = Path(ge=1, le=2000)) -> Movie:
     return JSONResponse(content=[], status_code=404)
 
 
-@app.get("/movies/", tags=["movies"], response_model=List[Movie])
+@ app.get("/movies/", tags=["movies"], response_model=List[Movie])
 def get_movie_by_category(
     category: str = Query(min_length=5, max_length=15)
 ) -> List[Movie]:
@@ -80,7 +104,7 @@ def get_movie_by_category(
     return JSONResponse(content=data)
 
 
-@app.post("/movies", tags=["movies"], response_model=dict, status_code=201)
+@ app.post("/movies", tags=["movies"], response_model=dict, status_code=201)
 def create_movie(
     movie: Movie,
 ) -> dict:
@@ -88,7 +112,7 @@ def create_movie(
     return JSONResponse(content={"message": "Movie created"}, status_code=201)
 
 
-@app.put("/movies/{id}", tags=["movies"], response_model=dict, status_code=200)
+@ app.put("/movies/{id}", tags=["movies"], response_model=dict, status_code=200)
 def update_movie(id: int, movie: Movie) -> dict:
     for item in movies:
         if item["id"] == id:
@@ -100,7 +124,7 @@ def update_movie(id: int, movie: Movie) -> dict:
             return JSONResponse(content={"message": "Movie updated"}, status_code=200)
 
 
-@app.delete("/movies/{id}", tags=["movies"], response_model=dict, status_code=200)
+@ app.delete("/movies/{id}", tags=["movies"], response_model=dict, status_code=200)
 def delete_movies(id: int) -> dict:
     for item in movies:
         if item["id"] == id:
